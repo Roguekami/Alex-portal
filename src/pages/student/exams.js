@@ -1,189 +1,238 @@
 import { icons } from '../../icons.js';
-import { examQuestions } from '../../data/mock.js';
-import { navigate } from '../../router.js';
+import { examQuestions, examSettings, cbtScores, escapeHtml } from '../../data/mock.js';
+import { openModal, toast } from '../../components/modal.js';
+import { navigate, getUser } from '../../router.js';
 
-let state = {
-  currentQuestion: 0,
-  answers: [],
-  flagged: [],
-  reviewPanelOpen: false
-};
+const LETTERS = ['A', 'B', 'C', 'D'];
+
+let state;
+let timerId = null;
+
+function stopTimer() {
+  clearInterval(timerId);
+  timerId = null;
+}
+
+// Leaving the exam page stops the countdown
+window.addEventListener('hashchange', () => {
+  if (window.location.hash !== '#/student/exams') stopTimer();
+});
 
 export function render() {
+  if (!examQuestions.length) {
+    return `
+      <div class="cbt-layout">
+        <div class="cbt-result card">
+          <h2 class="text-xl font-semibold mb-2">No exam available</h2>
+          <p class="text-secondary mb-6">Your teacher hasn't published an exam yet.</p>
+          <a href="#/student/dashboard" class="btn btn-primary">Back to dashboard</a>
+        </div>
+      </div>
+    `;
+  }
+
   return `
     <div class="cbt-layout">
-      <div class="cbt-header flex justify-between items-center p-4 bg-white border-b">
-        <div class="font-semibold">Mathematics &mdash; SS2 Exam</div>
-        <div class="cbt-progress text-sm">Question <span id="q-num">1</span> of ${examQuestions.length}</div>
-        <div class="cbt-timer font-mono font-medium flex items-center gap-2">
-          ${icons.clock} 45:00
+      <div class="cbt-header">
+        <div class="cbt-title">${escapeHtml(examSettings.subject)} &mdash; ${examSettings.class} CBT</div>
+        <div class="cbt-progress"><span id="answered-count">0</span> of ${examQuestions.length} answered</div>
+        <div class="flex items-center gap-4">
+          <div class="cbt-timer calm flex items-center gap-2" id="timer">${icons.clock} <span id="timer-text">--:--</span></div>
+          <button class="btn btn-sm btn-ghost" id="btn-exit">Exit</button>
         </div>
       </div>
-      
-      <div class="flex flex-1 overflow-hidden relative">
-        <div class="cbt-main flex-1 flex flex-col p-6 overflow-y-auto">
-          <div class="cbt-body max-w-3xl mx-auto w-full flex-1">
-            <h3 class="cbt-question-num text-lg font-medium mb-4" id="q-title">Question 1</h3>
-            <div class="cbt-question text-lg mb-8" id="q-text"></div>
-            
-            <div class="cbt-options flex flex-col gap-3" id="q-options">
-              <!-- Options rendered via JS -->
-            </div>
-          </div>
-          
-          <div class="cbt-footer flex justify-between items-center mt-8 pt-4 border-t">
-            <div class="flex gap-2">
-              <button class="btn btn-secondary flex items-center gap-2" id="btn-flag">
-                ${icons.flag} Flag for Review
-              </button>
-              <button class="btn btn-secondary flex items-center gap-2" id="btn-review">
-                ${icons.eye} Review
-              </button>
-            </div>
-            <div class="flex gap-2">
-              <button class="btn btn-secondary" id="btn-prev" disabled>Previous</button>
-              <button class="btn btn-primary flex items-center gap-2" id="btn-next">
-                Next ${icons.chevronRight}
-              </button>
-            </div>
-          </div>
+      <div class="cbt-progress-track"><div class="cbt-progress-fill" id="progress-fill" style="width:0%"></div></div>
+
+      <div class="cbt-main">
+        <div class="cbt-body">
+          <div class="cbt-question-num" id="q-title"></div>
+          <div class="cbt-question" id="q-text"></div>
+          <div id="q-options"></div>
         </div>
-        
-        <div class="cbt-review-panel bg-gray-50 border-l w-64 flex-col hidden" id="review-panel">
-          <div class="cbt-review-header p-4 border-b font-medium flex justify-between items-center">
-            Review Questions
-            <button class="btn btn-ghost p-1" id="btn-close-review">${icons.x}</button>
+
+        <div class="cbt-footer">
+          <div class="cbt-footer-group">
+            <button class="btn btn-secondary" id="btn-flag">${icons.flag} <span>Flag for review</span></button>
+            <button class="btn btn-secondary" id="btn-review">${icons.eye} Review all</button>
           </div>
-          <div class="cbt-review-grid grid grid-cols-4 gap-2 p-4 overflow-y-auto" id="review-grid">
-            <!-- Review dots rendered via JS -->
+          <div class="cbt-footer-group">
+            <button class="btn btn-secondary" id="btn-prev">${icons.chevronLeft} Previous</button>
+            <button class="btn btn-primary" id="btn-next"></button>
           </div>
         </div>
       </div>
+
+      <div class="cbt-review-backdrop" id="review-backdrop"></div>
+      <aside class="cbt-review-panel" id="review-panel">
+        <div class="cbt-review-header">
+          Review questions
+          <button class="modal-close" id="btn-close-review" aria-label="Close">${icons.x}</button>
+        </div>
+        <div class="cbt-review-grid" id="review-grid"></div>
+        <div class="cbt-review-legend">
+          <span class="lg-answered">Answered</span>
+          <span class="lg-flagged">Flagged</span>
+          <span>Not answered</span>
+        </div>
+        <div class="p-5 border-t" style="margin-top:auto">
+          <button class="btn btn-primary w-full justify-center" id="btn-submit-panel">Submit exam</button>
+        </div>
+      </aside>
     </div>
   `;
 }
 
-function renderQuestion() {
-  const q = examQuestions[state.currentQuestion];
-  document.getElementById('q-num').textContent = state.currentQuestion + 1;
-  document.getElementById('q-title').textContent = `Question ${state.currentQuestion + 1}`;
-  document.getElementById('q-text').textContent = q.question;
-  
-  const optionsContainer = document.getElementById('q-options');
-  const letters = ['A', 'B', 'C', 'D'];
-  optionsContainer.innerHTML = q.options.map((opt, i) => `
-    <div class="cbt-option p-4 border rounded cursor-pointer hover:bg-gray-50 transition-colors ${state.answers[state.currentQuestion] === i ? 'selected border-blue-500 bg-blue-50' : ''}" data-index="${i}">
-      <span class="cbt-option-letter font-medium mr-3">${letters[i]}.</span>
-      <span class="cbt-option-text">${opt}</span>
-    </div>
-  `).join('');
-  
-  document.getElementById('btn-prev').disabled = state.currentQuestion === 0;
-  
-  const btnNext = document.getElementById('btn-next');
-  if (state.currentQuestion === examQuestions.length - 1) {
-    btnNext.innerHTML = 'Submit Exam';
-    btnNext.classList.remove('btn-secondary');
-    btnNext.classList.add('btn-primary');
-  } else {
-    btnNext.innerHTML = `Next ${icons.chevronRight}`;
-  }
-  
-  const btnFlag = document.getElementById('btn-flag');
-  if (state.flagged.includes(state.currentQuestion)) {
-    btnFlag.classList.add('text-amber-600', 'bg-amber-50');
-  } else {
-    btnFlag.classList.remove('text-amber-600', 'bg-amber-50');
-  }
-  
-  renderReviewGrid();
+function answeredCount() {
+  return state.answers.filter(a => a !== undefined).length;
 }
 
-function renderReviewGrid() {
-  const grid = document.getElementById('review-grid');
-  grid.innerHTML = examQuestions.map((_, i) => `
-    <div class="cbt-review-dot w-10 h-10 flex items-center justify-center rounded border cursor-pointer
-      ${state.currentQuestion === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'}
-      ${state.answers[i] !== undefined ? 'bg-blue-100 text-blue-800' : 'bg-white'}
-      ${state.flagged.includes(i) ? 'border-amber-500' : ''}
-    " data-index="${i}">
-      ${i + 1}
+function renderQuestion() {
+  const i = state.current;
+  const q = examQuestions[i];
+  const last = i === examQuestions.length - 1;
+
+  document.getElementById('q-title').textContent = `Question ${i + 1} of ${examQuestions.length}`;
+  document.getElementById('q-text').textContent = q.question;
+  document.getElementById('q-options').innerHTML = q.options.map((opt, idx) => `
+    <div class="cbt-option ${state.answers[i] === idx ? 'selected' : ''}" data-index="${idx}" role="button" tabindex="0">
+      <span class="cbt-option-letter">${LETTERS[idx]}</span>
+      <span>${escapeHtml(opt)}</span>
     </div>
   `).join('');
+
+  document.getElementById('btn-prev').disabled = i === 0;
+  document.getElementById('btn-next').innerHTML = last ? `${icons.check} Finish` : `Next ${icons.chevronRight}`;
+
+  const flagged = state.flagged.has(i);
+  const flagBtn = document.getElementById('btn-flag');
+  flagBtn.classList.toggle('flag-active', flagged);
+  flagBtn.querySelector('span').textContent = flagged ? 'Flagged' : 'Flag for review';
+
+  renderProgress();
+}
+
+function renderProgress() {
+  const n = answeredCount();
+  document.getElementById('answered-count').textContent = n;
+  document.getElementById('progress-fill').style.width = `${(n / examQuestions.length) * 100}%`;
+  document.getElementById('review-grid').innerHTML = examQuestions.map((_, i) => {
+    const cls = [
+      state.answers[i] !== undefined ? 'answered' : '',
+      state.flagged.has(i) ? 'flagged' : '',
+      state.current === i ? 'current' : '',
+    ].join(' ');
+    return `<div class="cbt-review-dot ${cls}" data-index="${i}">${i + 1}</div>`;
+  }).join('');
+}
+
+function renderTimer() {
+  const m = Math.floor(state.remaining / 60);
+  const s = state.remaining % 60;
+  document.getElementById('timer-text').textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const timer = document.getElementById('timer');
+  timer.classList.toggle('calm', state.remaining > 300);
+  timer.classList.toggle('urgent', state.remaining <= 60);
+}
+
+function setReviewOpen(open) {
+  document.getElementById('review-panel').classList.toggle('open', open);
+  document.getElementById('review-backdrop').classList.toggle('open', open);
+}
+
+function confirmSubmit() {
+  setReviewOpen(false);
+  const unanswered = examQuestions.length - answeredCount();
+  openModal({
+    title: 'Submit exam?',
+    submitLabel: 'Submit exam',
+    content: `
+      <p class="text-sm text-secondary mb-4">You can't change your answers after submitting.</p>
+      <div class="flex justify-between text-sm mb-2"><span>Answered</span><span class="font-semibold">${answeredCount()} / ${examQuestions.length}</span></div>
+      ${unanswered ? `<div class="flex justify-between text-sm mb-2 text-danger"><span>Unanswered</span><span class="font-semibold">${unanswered}</span></div>` : ''}
+      ${state.flagged.size ? `<div class="flex justify-between text-sm text-secondary"><span>Flagged for review</span><span class="font-semibold">${state.flagged.size}</span></div>` : ''}
+    `,
+    onSubmit: () => finish(),
+  });
+}
+
+function finish(timedOut = false) {
+  stopTimer();
+  const correct = examQuestions.filter((q, i) => state.answers[i] === q.correct).length;
+  const pct = Math.round((correct / examQuestions.length) * 100);
+
+  const studentId = getUser()?.studentId;
+  if (studentId) (cbtScores[examSettings.subject] ??= {})[studentId] = pct;
+
+  document.querySelector('.cbt-layout').innerHTML = `
+    <div class="cbt-result card">
+      <div class="stat-icon green" style="margin:0 auto 16px;width:56px;height:56px">${icons.check}</div>
+      <h2 class="text-xl font-semibold mb-2">${timedOut ? "Time's up — exam submitted" : 'Exam submitted'}</h2>
+      <p class="text-secondary mb-6">${escapeHtml(examSettings.subject)} &mdash; ${examSettings.class}</p>
+      <div class="cbt-result-score">${pct}%</div>
+      <p class="text-sm text-secondary mb-6">${correct} of ${examQuestions.length} correct</p>
+      <p class="text-xs text-muted mb-6">Your score has been sent to your teacher and will appear on your report card once results are published.</p>
+      <a href="#/student/dashboard" class="btn btn-primary">Back to dashboard</a>
+    </div>
+  `;
+  if (timedOut) toast("Time's up — your answers were submitted automatically", 'warning');
 }
 
 export function init() {
-  state = {
-    currentQuestion: 0,
-    answers: [],
-    flagged: [],
-    reviewPanelOpen: false
-  };
-  
+  if (!examQuestions.length) return;
+
+  state = { current: 0, answers: [], flagged: new Set(), remaining: examSettings.duration * 60 };
   renderQuestion();
-  
-  document.getElementById('q-options').addEventListener('click', (e) => {
-    const option = e.target.closest('.cbt-option');
-    if (option) {
-      const idx = parseInt(option.dataset.index);
-      state.answers[state.currentQuestion] = idx;
-      
-      document.querySelectorAll('.cbt-option').forEach(el => {
-        el.classList.remove('selected', 'border-blue-500', 'bg-blue-50');
-      });
-      option.classList.add('selected', 'border-blue-500', 'bg-blue-50');
-      renderReviewGrid();
-    }
+  renderTimer();
+
+  stopTimer();
+  timerId = setInterval(() => {
+    state.remaining--;
+    if (state.remaining <= 0) { state.remaining = 0; renderTimer(); finish(true); return; }
+    renderTimer();
+  }, 1000);
+
+  const choose = (el) => {
+    state.answers[state.current] = Number(el.dataset.index);
+    document.querySelectorAll('.cbt-option').forEach(o => o.classList.toggle('selected', o === el));
+    renderProgress();
+  };
+  const options = document.getElementById('q-options');
+  options.addEventListener('click', e => { const o = e.target.closest('.cbt-option'); if (o) choose(o); });
+  options.addEventListener('keydown', e => {
+    const o = e.target.closest('.cbt-option');
+    if (o && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); choose(o); }
   });
-  
+
   document.getElementById('btn-next').addEventListener('click', () => {
-    if (state.currentQuestion < examQuestions.length - 1) {
-      state.currentQuestion++;
-      renderQuestion();
-    } else {
-      if (confirm('Are you sure you want to submit your exam?')) {
-        navigate('#/student/results');
-      }
-    }
+    if (state.current < examQuestions.length - 1) { state.current++; renderQuestion(); }
+    else confirmSubmit();
   });
-  
   document.getElementById('btn-prev').addEventListener('click', () => {
-    if (state.currentQuestion > 0) {
-      state.currentQuestion--;
-      renderQuestion();
-    }
+    if (state.current > 0) { state.current--; renderQuestion(); }
   });
-  
   document.getElementById('btn-flag').addEventListener('click', () => {
-    const idx = state.flagged.indexOf(state.currentQuestion);
-    if (idx > -1) {
-      state.flagged.splice(idx, 1);
-    } else {
-      state.flagged.push(state.currentQuestion);
-    }
+    state.flagged.has(state.current) ? state.flagged.delete(state.current) : state.flagged.add(state.current);
     renderQuestion();
   });
-  
-  const toggleReview = () => {
-    state.reviewPanelOpen = !state.reviewPanelOpen;
-    const panel = document.getElementById('review-panel');
-    if (state.reviewPanelOpen) {
-      panel.classList.remove('hidden');
-      panel.classList.add('flex');
-    } else {
-      panel.classList.add('hidden');
-      panel.classList.remove('flex');
-    }
-  };
-  
-  document.getElementById('btn-review').addEventListener('click', toggleReview);
-  document.getElementById('btn-close-review').addEventListener('click', toggleReview);
-  
-  document.getElementById('review-grid').addEventListener('click', (e) => {
+
+  document.getElementById('btn-exit').addEventListener('click', () => {
+    openModal({
+      title: 'Leave exam?',
+      content: '<p class="text-sm text-secondary">Your answers will not be saved.</p>',
+      submitLabel: 'Leave exam',
+      onSubmit: () => navigate('#/student/dashboard'),
+    });
+  });
+
+  document.getElementById('btn-review').addEventListener('click', () => setReviewOpen(true));
+  document.getElementById('btn-close-review').addEventListener('click', () => setReviewOpen(false));
+  document.getElementById('review-backdrop').addEventListener('click', () => setReviewOpen(false));
+  document.getElementById('btn-submit-panel').addEventListener('click', confirmSubmit);
+  document.getElementById('review-grid').addEventListener('click', e => {
     const dot = e.target.closest('.cbt-review-dot');
-    if (dot) {
-      state.currentQuestion = parseInt(dot.dataset.index);
-      renderQuestion();
-    }
+    if (!dot) return;
+    state.current = Number(dot.dataset.index);
+    renderQuestion();
+    setReviewOpen(false);
   });
 }

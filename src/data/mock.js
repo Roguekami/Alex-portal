@@ -6,7 +6,7 @@
 export const demoAccounts = {
   admin:   { id: 1, name: 'Adewale Johnson',  initials: 'AJ', role: 'admin',   email: 'admin@alexportal.ng' },
   teacher: { id: 2, name: 'Mrs. Ngozi Okafor', initials: 'NO', role: 'teacher', email: 'ngozi@alexportal.ng' },
-  student: { id: 3, name: 'Chidera Eze',       initials: 'CE', role: 'student', email: 'chidera@alexportal.ng', class: 'SS2', admissionNo: 'ALP/2024/0342' },
+  student: { id: 3, name: 'Chidera Eze',       initials: 'CE', role: 'student', studentId: 1, email: 'chidera@alexportal.ng', class: 'SS2', admissionNo: 'ALP/2024/0342' },
 };
 
 // --- Classes -----------------------------------------------
@@ -200,6 +200,21 @@ export const examQuestions = [
   { id: 10,subject: 'Mathematics', question: 'What is 15% of ₦24,000?',                           options: ['₦3,000', '₦3,600', '₦4,200', '₦2,400'],        correct: 1 },
 ];
 
+// --- Exam settings (shared by teacher creation + student CBT) ---
+export const examSettings = {
+  subject: 'Mathematics',
+  class: 'SS2',
+  opens: '2025-03-24T09:00',
+  closes: '2025-03-24T12:00',
+  duration: 30,
+  published: true,
+};
+
+// --- CBT scores (%), keyed by subject then studentId -------
+export const cbtScores = {
+  Mathematics: { 2: 90, 5: 60, 9: 70, 20: 80 },
+};
+
 // --- Results (term) ----------------------------------------
 export const results = [
   { studentId: 1, subject: 'Mathematics',        score: 82, remark: 'Excellent work', term: '2024/2025 — Term 1' },
@@ -226,7 +241,27 @@ export const resources = [
   { id: 6, title: 'Python Basics — Lesson 4',        subject: 'Computer Science', class: 'SS2', type: 'PDF',   uploadDate: '2025-02-12', teacher: 'Mr. Chinedu Okonkwo' },
 ];
 
+// --- Shared UI state (e.g. which class to open on Attendance) ---
+export const uiState = { attendanceClass: null };
+
 // --- Helpers -----------------------------------------------
+export function nextId(list) {
+  return list.reduce((max, item) => Math.max(max, item.id || 0), 0) + 1;
+}
+
+export function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+export function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
+
+export function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function formatCurrency(amount) {
   return '₦' + Number(amount).toLocaleString('en-NG');
 }
@@ -234,6 +269,10 @@ export function formatCurrency(amount) {
 export function formatDate(dateStr) {
   const d = new Date(dateStr);
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+export function getStudent(studentId) {
+  return students.find(s => s.id === studentId);
 }
 
 export function getStudentsByClass(className) {

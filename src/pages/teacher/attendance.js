@@ -1,103 +1,112 @@
 import { icons } from '../../icons.js';
-import { todayRoster } from '../../data/mock.js';
+import { students, attendanceRecords, uiState, escapeHtml } from '../../data/mock.js';
+import { toast } from '../../components/modal.js';
+import { rerender } from '../../router.js';
+
+const STATUS_CLASS = { present: 'active', late: 'active-warning', absent: 'active-danger' };
+const savedToday = new Set();
+
+function teacherClasses() {
+  return ['SS1', 'SS2'];
+}
 
 export function render() {
-  const today = new Date().toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short', year:'numeric'});
-  
-  // Use todayRoster if available, otherwise default to empty array
-  const roster = todayRoster || [];
-  
+  const classes = teacherClasses();
+  const selected = classes.includes(uiState.attendanceClass) ? uiState.attendanceClass : classes[0];
+  uiState.attendanceClass = selected;
+
+  const today = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const roster = students.filter(s => s.class === selected);
+
   const rowsHtml = roster.map((student, index) => `
-    <tr>
-      <td>${index + 1}</td>
-      <td class="font-medium">${student.name}</td>
-      <td>
-        <div class="toggle-group flex gap-2">
-          <button class="toggle-option active btn btn-sm" data-status="present">Present</button>
-          <button class="toggle-option btn btn-sm" data-status="late">Late</button>
-          <button class="toggle-option btn btn-sm" data-status="absent">Absent</button>
+    <tr data-student-id="${student.id}">
+      <td class="text-muted cell-hide-mobile">${index + 1}</td>
+      <td class="td-name cell-title">${escapeHtml(student.name)}</td>
+      <td class="cell-status">
+        <div class="toggle-group">
+          ${['present', 'late', 'absent'].map(s => `
+            <button class="toggle-option ${s === 'present' ? 'active' : ''}" data-status="${s}">${s[0].toUpperCase() + s.slice(1)}</button>
+          `).join('')}
         </div>
       </td>
     </tr>
   `).join('');
 
   return `
-    <div class="page-header flex justify-between items-center mb-6">
+    <div class="page-header">
       <h2>Mark Attendance</h2>
-    </div>
-    
-    <div class="filter-bar flex justify-between items-center mb-6 p-4 bg-white rounded shadow-sm">
-      <select class="filter-select form-select w-48">
-        <option>SS1</option>
-        <option>SS2</option>
-      </select>
-      <div class="font-medium text-secondary">Date: ${today}</div>
+      ${savedToday.has(selected) ? `<span class="badge badge-success">${icons.check} Saved for today</span>` : ''}
     </div>
 
-    <div class="table-card bg-white rounded shadow-sm">
-      <table style="width: 100%; text-align: left; border-collapse: collapse;">
+    <div class="filter-bar">
+      <select class="filter-select" id="attendance-class">
+        ${classes.map(c => `<option ${c === selected ? 'selected' : ''}>${c}</option>`).join('')}
+      </select>
+      <div class="text-sm text-secondary">${today}</div>
+      <div class="text-xs text-muted">Everyone starts as Present — just tap the exceptions.</div>
+    </div>
+
+    <div class="table-card">
+      <table class="responsive-table">
         <thead>
-          <tr class="border-b">
-            <th class="table-header-left p-4" style="width: 50px;">#</th>
-            <th class="table-header-left p-4">Student Name</th>
-            <th class="table-header-left p-4" style="width: 300px;">Status</th>
+          <tr>
+            <th style="width:50px">#</th>
+            <th>Student Name</th>
+            <th style="width:260px">Status</th>
           </tr>
         </thead>
         <tbody>
-          ${rowsHtml}
+          ${rowsHtml || '<tr class="responsive-empty"><td colspan="3" class="text-center text-muted">No students in this class.</td></tr>'}
         </tbody>
       </table>
-      <div class="flex items-center justify-between mt-6 p-4 border-t">
-        <div class="text-secondary font-medium">
-          <span id="present-count">${roster.length}</span> Present &middot; 
-          <span id="absent-count">0</span> Absent &middot; 
-          <span id="late-count">0</span> Late
+      <div class="flex items-center justify-between p-4 border-t" style="flex-wrap:wrap;gap:12px">
+        <div class="text-sm text-secondary">
+          <span id="present-count" class="font-semibold text-success">${roster.length}</span> Present &middot;
+          <span id="late-count" class="font-semibold">0</span> Late &middot;
+          <span id="absent-count" class="font-semibold text-danger">0</span> Absent
         </div>
-        <button class="btn btn-primary">Save Attendance</button>
+        <button class="btn btn-primary" id="btn-save-attendance" ${roster.length ? '' : 'disabled'}>${icons.save} Save Attendance</button>
       </div>
     </div>
   `;
 }
 
-export function init() {
-  document.querySelectorAll('.toggle-group').forEach(group => {
-    const buttons = group.querySelectorAll('.toggle-option');
-    buttons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        // Reset styles for all siblings
-        buttons.forEach(b => {
-          b.classList.remove('active', 'active-warning', 'active-danger');
-        });
-        
-        // Add proper active class based on status
-        const status = e.target.dataset.status;
-        if (status === 'present') {
-          e.target.classList.add('active');
-        } else if (status === 'late') {
-          e.target.classList.add('active-warning');
-        } else if (status === 'absent') {
-          e.target.classList.add('active-danger');
-        }
-        
-        updateCounts();
-      });
-    });
-  });
-  
-  // Initial count
-  updateCounts();
+function updateCounts() {
+  const count = cls => document.querySelectorAll(`.toggle-option.${cls}`).length;
+  document.getElementById('present-count').textContent = count('active');
+  document.getElementById('late-count').textContent = count('active-warning');
+  document.getElementById('absent-count').textContent = count('active-danger');
 }
 
-function updateCounts() {
-  const presents = document.querySelectorAll('.toggle-option.active').length;
-  const lates = document.querySelectorAll('.toggle-option.active-warning').length;
-  const absents = document.querySelectorAll('.toggle-option.active-danger').length;
-  
-  const pc = document.getElementById('present-count');
-  const lc = document.getElementById('late-count');
-  const ac = document.getElementById('absent-count');
-  
-  if (pc) pc.textContent = presents;
-  if (lc) lc.textContent = lates;
-  if (ac) ac.textContent = absents;
+export function init() {
+  document.querySelectorAll('.toggle-group').forEach(group => {
+    group.addEventListener('click', (e) => {
+      const btn = e.target.closest('.toggle-option');
+      if (!btn) return;
+      group.querySelectorAll('.toggle-option').forEach(b => b.classList.remove('active', 'active-warning', 'active-danger'));
+      btn.classList.add(STATUS_CLASS[btn.dataset.status]);
+      updateCounts();
+    });
+  });
+
+  document.getElementById('attendance-class').addEventListener('change', (e) => {
+    uiState.attendanceClass = e.target.value;
+    rerender();
+  });
+
+  document.getElementById('btn-save-attendance').addEventListener('click', () => {
+    let absent = 0;
+    document.querySelectorAll('tr[data-student-id]').forEach(row => {
+      const status = row.querySelector('.toggle-option.active, .toggle-option.active-warning, .toggle-option.active-danger')?.dataset.status;
+      const record = attendanceRecords.find(r => r.studentId === Number(row.dataset.studentId));
+      if (status === 'absent') absent++;
+      if (record && !savedToday.has(uiState.attendanceClass)) {
+        record.totalDays++;
+        if (status === 'absent') record.daysAbsent++; else record.daysPresent++;
+      }
+    });
+    savedToday.add(uiState.attendanceClass);
+    toast(`${uiState.attendanceClass} attendance saved${absent ? ` — ${absent} absent` : ' — full attendance'}`);
+    rerender();
+  });
 }

@@ -1,67 +1,81 @@
 import { icons } from '../../icons.js';
-import { announcements, formatDate } from '../../data/mock.js';
+import { announcements, examSettings, formatDate, formatCurrency, escapeHtml, greeting, getStudent, getAttendanceForStudent } from '../../data/mock.js';
+import { getUser, navigate } from '../../router.js';
 
 export function render() {
-  const latestAnnouncement = announcements[0];
+  const user = getUser();
+  const student = getStudent(user.studentId);
+  const att = getAttendanceForStudent(user.studentId) ?? { daysPresent: 0, totalDays: 0 };
+  const rate = att.totalDays ? Math.round((att.daysPresent / att.totalDays) * 100) : 0;
+  const balance = student.amountDue - student.amountPaid;
+  const latest = announcements[0];
+  const firstName = student.name.split(' ')[0];
 
   return `
-    <div class="page-header">
-      <h2>Dashboard</h2>
+    <div class="greeting-card flex items-center gap-4">
+      <div class="sidebar-avatar" style="width:56px;height:56px;font-size:1.125rem">${user.initials}</div>
+      <div>
+        <h2>${greeting()}, ${escapeHtml(firstName)}</h2>
+        <p>${student.class} &middot; ${student.admissionNo}</p>
+      </div>
     </div>
 
-    <div class="greeting-card card">
-      <h2>Good morning, Chidera</h2>
-      <p>SS2 &middot; ALP/2024/0342</p>
-    </div>
-
-    <div class="card-grid mt-6">
-      <div class="stat-card">
-        <div class="stat-icon blue">
-          ${icons.clipboardCheck}
-        </div>
+    ${examSettings.published && examSettings.class === student.class ? `
+      <div class="card mb-6 flex items-center justify-between gap-4" style="flex-wrap:wrap;border-left:4px solid var(--primary)">
         <div>
+          <div class="font-semibold">${examSettings.subject} CBT exam is open</div>
+          <div class="text-sm text-secondary">${examSettings.duration} minutes &middot; one attempt</div>
+        </div>
+        <button class="btn btn-primary" id="btn-start-exam">Start exam ${icons.chevronRight}</button>
+      </div>
+    ` : ''}
+
+    <div class="card-grid">
+      <a href="#/student/attendance" class="stat-card">
+        <div class="stat-card-content">
           <div class="stat-card-label">Attendance</div>
-          <div class="stat-card-value">18/20 days</div>
-          <div class="stat-card-sub text-sm text-muted">90% attendance rate</div>
+          <div class="stat-card-value">${att.daysPresent}/${att.totalDays} days</div>
+          <div class="progress-bar mt-2"><div class="progress-fill ${rate >= 75 ? 'green' : 'amber'}" style="width:${rate}%"></div></div>
+          <div class="stat-card-sub">${rate}% present this term</div>
         </div>
-      </div>
-      
-      <div class="stat-card">
-        <div class="stat-icon green">
-          ${icons.creditCard}
-        </div>
-        <div>
+        <div class="stat-icon blue">${icons.clipboardCheck}</div>
+      </a>
+
+      <a href="#/student/fees" class="stat-card">
+        <div class="stat-card-content">
           <div class="stat-card-label">Fee Balance</div>
-          <div class="stat-card-value">₦0</div>
-          <div class="stat-card-sub text-sm text-muted">Fully paid &mdash; Term 2</div>
+          ${balance > 0 ? `
+            <div class="stat-card-value text-danger">${formatCurrency(balance)}</div>
+            <div class="stat-card-sub">Outstanding this term</div>
+          ` : `
+            <div class="stat-card-value">Fully paid</div>
+            <div class="stat-card-sub">Nothing owed this term</div>
+          `}
         </div>
-      </div>
+        <div class="stat-icon ${balance > 0 ? 'red' : 'green'}">${icons.creditCard}</div>
+      </a>
 
-      <div class="stat-card">
-        <div class="stat-icon blue">
-          ${icons.trendingUp}
+      <a href="#/student/results" class="stat-card">
+        <div class="stat-card-content">
+          <div class="stat-card-label">Latest Report Card</div>
+          <div class="stat-card-value">Term 1</div>
+          <div class="stat-card-sub">View and print &rarr;</div>
         </div>
-        <div>
-          <div class="stat-card-label">Class Position</div>
-          <div class="stat-card-value">3rd</div>
-          <div class="stat-card-sub text-sm text-muted">Out of 33 students</div>
-        </div>
-      </div>
+        <div class="stat-icon blue">${icons.trendingUp}</div>
+      </a>
     </div>
 
-    <div class="mt-6">
-      <h3 class="section-heading">Latest Announcement</h3>
-      ${latestAnnouncement ? `
-        <div class="announcement-card card">
-          <div class="announcement-date text-sm text-muted mb-2">${formatDate(latestAnnouncement.date)}</div>
-          <h4 class="announcement-title font-semibold mb-2">${latestAnnouncement.title}</h4>
-          <p class="announcement-body text-secondary">${latestAnnouncement.body}</p>
-        </div>
-      ` : '<div class="empty-state">No new announcements.</div>'}
-    </div>
+    <div class="section-heading">Latest Announcement</div>
+    ${latest ? `
+      <div class="announcement-card">
+        <div class="announcement-date">${formatDate(latest.date)}</div>
+        <div class="announcement-title">${escapeHtml(latest.title)}</div>
+        <div class="announcement-body">${escapeHtml(latest.body)}</div>
+      </div>
+    ` : '<div class="card empty-state"><p>No new announcements.</p></div>'}
   `;
 }
 
 export function init() {
-  // Initialization logic for dashboard
+  document.getElementById('btn-start-exam')?.addEventListener('click', () => navigate('#/student/exams'));
 }

@@ -2,7 +2,8 @@
 // ALExportal — Login Page
 // ===========================================================
 import { navigate, setUser } from '../router.js';
-import { demoAccounts } from '../data/mock.js';
+import { demoAccounts, escapeHtml } from '../data/mock.js';
+import { openModal, field, toast } from '../components/modal.js';
 
 export function render() {
   return `
@@ -20,7 +21,8 @@ export function render() {
             <label class="form-label" for="login-password">Password</label>
             <input class="form-input" type="password" id="login-password" placeholder="Enter your password" autocomplete="current-password" />
           </div>
-          <a href="#" class="login-forgot">Forgot password?</a>
+          <div class="form-error hidden" id="login-error">No account found for that email. Try one of the demo accounts below.</div>
+          <a href="#" class="login-forgot" id="forgot-link">Forgot password?</a>
           <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;">
             Sign in
           </button>
@@ -74,9 +76,24 @@ export function init() {
       setUser(match);
       navigate(`#/${match.role}/dashboard`);
     } else {
-      // Default to admin for demo purposes
-      setUser(demoAccounts.admin);
-      navigate('#/admin/dashboard');
+      document.getElementById('login-error').classList.remove('hidden');
+      document.getElementById('login-email').classList.add('is-invalid');
     }
+  });
+
+  document.getElementById('forgot-link')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openModal({
+      title: 'Reset your password',
+      submitLabel: 'Send reset link',
+      content: `
+        <p class="text-sm text-secondary mb-4">Enter the email on your account and we'll send you a link to reset your password.</p>
+        <div class="form-group">
+          <label class="form-label" for="reset-email">Email address</label>
+          <input class="form-input" type="email" id="reset-email" value="${escapeHtml(document.getElementById('login-email').value)}" required />
+        </div>
+      `,
+      onSubmit: () => toast(`Reset link sent to ${escapeHtml(field('reset-email'))}`),
+    });
   });
 }

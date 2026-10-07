@@ -1,11 +1,9 @@
-import { icons } from '../../icons.js';
 import { getAttendanceForStudent } from '../../data/mock.js';
+import { getUser } from '../../router.js';
 
 export function render() {
-  // Mock data for display based on prompt
-  const daysPresent = 18;
-  const daysAbsent = 2;
-  const rate = 90;
+  const att = getAttendanceForStudent(getUser().studentId) ?? { daysPresent: 0, daysAbsent: 0, totalDays: 0 };
+  const rate = att.totalDays ? Math.round((att.daysPresent / att.totalDays) * 100) : 0;
 
   return `
     <div class="page-header">
@@ -13,63 +11,36 @@ export function render() {
     </div>
 
     <div class="card mb-6">
-      <div class="mb-4">
+      <div class="mb-6">
         <h3 class="font-semibold">2024/2025 &mdash; Term 2</h3>
-        <p class="text-sm text-muted">Jan 08, 2024 - Mar 28, 2024</p>
+        <p class="text-sm text-muted">${att.totalDays} school days so far</p>
       </div>
 
-      <div class="flex gap-4 mb-4">
-        <div class="flex-1">
+      <div class="grid grid-cols-4 gap-4 mb-6">
+        <div>
           <p class="text-sm text-muted">Days Present</p>
-          <p class="font-semibold text-lg">${daysPresent}</p>
+          <p class="text-2xl font-bold text-success">${att.daysPresent}</p>
         </div>
-        <div class="flex-1">
+        <div>
           <p class="text-sm text-muted">Days Absent</p>
-          <p class="font-semibold text-lg">${daysAbsent}</p>
+          <p class="text-2xl font-bold ${att.daysAbsent ? 'text-danger' : ''}">${att.daysAbsent}</p>
         </div>
-        <div class="flex-1">
+        <div>
+          <p class="text-sm text-muted">Total Days</p>
+          <p class="text-2xl font-bold">${att.totalDays}</p>
+        </div>
+        <div>
           <p class="text-sm text-muted">Attendance Rate</p>
-          <p class="font-semibold text-lg">${rate}%</p>
+          <p class="text-2xl font-bold">${rate}%</p>
         </div>
       </div>
 
-      <div class="progress-bar mb-2">
-        <div class="progress-fill green" style="width: ${rate}%;"></div>
+      <div class="progress-bar">
+        <div class="progress-fill ${rate >= 75 ? 'green' : 'amber'}" style="width:${rate}%"></div>
       </div>
-    </div>
-
-    <div class="card">
-      <h3 class="section-heading mb-4">Monthly Breakdown</h3>
-      <div class="table-card">
-        <table>
-          <thead>
-            <tr>
-              <th>Month</th>
-              <th>Days Present</th>
-              <th>Days Absent</th>
-              <th>Rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>January</td>
-              <td>10</td>
-              <td>1</td>
-              <td>90.9%</td>
-            </tr>
-            <tr>
-              <td>February</td>
-              <td>8</td>
-              <td>1</td>
-              <td>88.9%</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <p class="text-xs text-muted mt-2">${rate >= 90 ? 'Excellent attendance — keep it up!' : rate >= 75 ? 'Good attendance.' : 'Attendance is below the school target of 75%.'}</p>
     </div>
   `;
 }
 
-export function init() {
-  // Initialization logic for attendance
-}
+export function init() {}

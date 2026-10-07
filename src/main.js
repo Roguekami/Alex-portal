@@ -6,7 +6,6 @@ import { navigate, getUser, setUser, clearUser } from './router.js';
 import { renderSidebar, initSidebar, pageTitles } from './components/sidebar.js';
 import { renderTopbar, initTopbar } from './components/topbar.js';
 import { icons } from './icons.js';
-import { demoAccounts } from './data/mock.js';
 
 const app = document.getElementById('app');
 
@@ -51,9 +50,11 @@ async function handleRoute() {
   if (!loader) { navigate(user ? `#/${user.role}/dashboard` : '#/login'); return; }
 
   const mod = await loader();
+  if ((window.location.hash || '#/login') !== route) return; // navigated away while loading
+  window.scrollTo(0, 0);
 
-  if (route === '#/login') {
-    // Login — no chrome
+  // Login and the CBT exam render without app chrome
+  if (route === '#/login' || route === '#/student/exams') {
     app.innerHTML = mod.render();
     if (mod.init) mod.init();
     return;
